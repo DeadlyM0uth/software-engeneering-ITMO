@@ -1,0 +1,46 @@
+@startuml sequence_project
+
+title Диаграмма последовательности - Управление проектами
+
+actor Пользователь1 as user1
+actor Пользователь2 as user2
+boundary Клиент as client
+control Сервер as server
+database "База данных" as db
+
+== Создание проекта ==
+
+user1 -> client : Заполнение формы создания\nнового проекта
+activate client
+client -> server : Отправка данных\n(название, описание)
+activate server
+server -> db : Создание записи проекта
+activate db
+db --> server : ID проекта
+deactivate db
+server --> client : Ответ с ID проекта
+deactivate server
+client --> user1 : Смена интерфейса\n(отображение холста проекта)
+deactivate client
+
+== Приглашение пользователя ==
+
+user1 -> client : Ввод email пользователя
+activate client
+client -> server : Отправка запроса\nс данными пользователя
+activate server
+server -> db : Добавление связи\nпроекта и пользователя
+activate db
+db --> server : Подтверждение
+deactivate db
+server --> client : Успех
+deactivate server
+client --> user1 : Уведомление об успехе
+deactivate client
+
+note right of user2
+  Пользователь2 получает
+  доступ к проекту
+end note
+
+@enduml

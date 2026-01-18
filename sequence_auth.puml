@@ -1,0 +1,26 @@
+@startuml sequence_auth
+
+title Диаграмма последовательности - Авторизация
+
+actor Пользователь as user
+boundary Клиент as client
+control Сервер as server
+database "База данных" as db
+
+== Авторизация ==
+
+user -> client : Заполняет форму авторизации
+activate client
+client -> server : Отправка данных (email, пароль)
+activate server
+server -> db : Запрос учетных данных
+activate db
+db --> server : Данные пользователя
+deactivate db
+server -> server : Валидация данных\n(проверка пароля)
+server --> client : JWT токен
+deactivate server
+client --> user : Смена интерфейса\n(переход в личный кабинет)
+deactivate client
+
+@enduml

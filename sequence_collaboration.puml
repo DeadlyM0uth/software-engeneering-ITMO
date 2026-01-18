@@ -1,0 +1,91 @@
+@startuml sequence_collaboration
+
+title Диаграмма последовательности - Совместное редактирование
+
+actor Пользователь1 as user1
+actor Пользователь2 as user2
+boundary "Клиент 1" as client1
+boundary "Клиент 2" as client2
+control "HTTP-сервер" as server
+database "База данных" as db
+control "WebSocket-сервер" as ws
+
+== Подключение к проекту ==
+
+user1 -> client1 : Открывает проект
+activate client1
+client1 -> server : Запрос данных холста\n(GET /project/{id})
+activate server
+server -> db : Запрос данных холста
+activate db
+db --> server : Данные холста\n(объекты, позиции)
+deactivate db
+server --> client1 : Данные холста (JSON)
+deactivate server
+
+client1 -> ws : Подключение к комнате\nпо ID проекта
+activate ws
+ws --> client1 : Подтверждение подключения
+client1 -> ws : Отправка текущего\nсостояния клиента
+ws -> ws : Регистрация клиента\nв комнате
+deactivate ws
+
+user1 <-- client1 : Отображение холста
+deactivate client1
+
+...Пользователь 2 присоединяется...
+
+user2 -> client2 : Подключение к проекту
+activate client2
+client2 -> ws : Подключение к комнате\nпо ID проекта
+activate ws
+ws --> client2 : Подтверждение подключения\n+ текущее состояние холста
+deactivate ws
+user2 <-- client2 : Отображение холста
+deactivate client2
+
+== Синхронизация изменений в реальном времени ==
+
+loop Редактирование объектов
+    user1 -> client1 : Рисует объект на холсте
+    activate client1
+    client1 -> ws : Отправка изменений\n(дельта: тип, координаты)
+    activate ws
+    ws -> ws : Фиксация изменений\nв памяти
+    
+    ws --> client1 : Подтверждение
+    ws --> client2 : Рассылка изменений\nвсем участникам
+    deactivate ws
+    
+    activate client2
+    client2 -> client2 : Обработка изменений\n(обновление холста)
+    client2 --> user2 : Отображение нового объекта
+    deactivate client2
+    deactivate client1
+    
+    ...
+    
+    user2 -> client2 : Перемещение объекта
+    activate client2
+    client2 -> ws : Отправка изменений\n(дельта: ID объекта, новые координаты)
+    activate ws
+    ws -> ws : Фиксация изменений\nв памяти
+    
+    ws --> client2 : Подтверждение
+    ws --> client1 : Рассылка изменений\nвсем участникам
+    deactivate ws
+    
+    activate client1
+    client1 -> client1 : Обработка изменений\n(обновление позиции)
+    client1 --> user1 : Отображение перемещения
+    deactivate client1
+    deactivate client2
+end
+
+note over ws
+  Периодически WebSocket-сервер
+  сохраняет снапшот состояния
+  в базу данных через HTTP API
+end note
+
+@enduml
