@@ -1,0 +1,185 @@
+@startuml
+
+title Диаграмма классов WebSocket-сервера
+
+package "WebSocket Server" {
+    class WebSocketServer {
+        - port: int
+        - connections: Map<string, Connection>
+        - sessions: Map<string, Session>
+        + start(): void
+        + stop(): void
+        + handleConnection(socket: Socket): void
+        + broadcast(message: Message, excludeId?: string): void
+        + sendToUser(userId: string, message: Message): void
+    }
+
+    class Connection {
+        - id: string
+        - socket: Socket
+        - userId: string
+        - projectId: string
+        - isAlive: boolean
+        - lastActivity: DateTime
+        + send(message: Message): void
+        + close(): void
+        + ping(): void
+        + isActive(): boolean
+    }
+
+    class Session {
+        - id: string
+        - projectId: string
+        - participants: Set<string>
+        - createdAt: DateTime
+        - lastActivity: DateTime
+        + addParticipant(userId: string): void
+        + removeParticipant(userId: string): void
+        + getActiveUsers(): string[]
+        + isActive(): boolean
+    }
+
+    class MessageHandler {
+        + handleMessage(connection: Connection, message: Message): void
+        - routeMessage(type: MessageType, data: any): void
+    }
+
+    class SyncManager {
+        - operationalTransform: OTEngine
+        - conflictResolver: ConflictResolver
+        + processEdit(edit: EditOperation): void
+        + synchronizeChanges(projectId: string, changes: Change[]): void
+        + broadcastChanges(projectId: string, changes: Change[]): void
+        + resolveConflicts(operations: EditOperation[]): EditOperation[]
+    }
+
+    class PresenceManager {
+        - userPresence: Map<string, PresenceInfo>
+        + updatePresence(userId: string, status: PresenceStatus): void
+        + getUsersInProject(projectId: string): PresenceInfo[]
+        + notifyPresenceChange(projectId: string, userId: string): void
+    }
+
+    class SnapshotManager {
+        - snapshotInterval: int
+        - lastSnapshot: Map<string, DateTime>
+        + shouldCreateSnapshot(projectId: string): boolean
+        + createSnapshot(projectId: string, state: ProjectState): void
+        + scheduleSnapshot(projectId: string): void
+    }
+
+    class ConflictResolver {
+        + detectConflict(op1: EditOperation, op2: EditOperation): boolean
+        + resolve(operations: EditOperation[]): EditOperation[]
+        - applyTransformation(op: EditOperation, against: EditOperation): EditOperation
+    }
+
+    class OTEngine {
+        - history: EditOperation[]
+        + transform(clientOp: EditOperation, serverOps: EditOperation[]): EditOperation
+        + apply(op: EditOperation, state: DocumentState): DocumentState
+    }
+
+    enum MessageType {
+        EDIT
+        SYNC
+        PRESENCE
+        CURSOR
+        SNAPSHOT
+        ACK
+        ERROR
+    }
+
+    class Message {
+        + type: MessageType
+        + payload: any
+        + timestamp: DateTime
+        + userId: string
+        + projectId: string
+    }
+
+    class EditOperation {
+        + id: string
+        + type: OperationType
+        + objectId: string
+        + property: string
+        + oldValue: any
+        + newValue: any
+        + timestamp: DateTime
+        + userId: string
+    }
+
+    enum OperationType {
+        INSERT
+        DELETE
+        UPDATE
+        MOVE
+    }
+
+    class PresenceInfo {
+        + userId: string
+        + userName: string
+        + status: PresenceStatus
+        + cursor: CursorPosition
+        + lastSeen: DateTime
+    }
+
+    enum PresenceStatus {
+        ONLINE
+        EDITING
+        IDLE
+        OFFLINE
+    }
+}
+
+package "Integration" {
+    interface IStorageService {
+        + saveSnapshot(projectId: string, data: any): Promise<void>
+        + loadSnapshot(projectId: string): Promise<any>
+    }
+
+    interface IAuthService {
+        + validateToken(token: string): Promise<User>
+        + getUserPermissions(userId: string, projectId: string): Promise<Permissions>
+    }
+}
+
+' Relationships
+WebSocketServer "1" *-- "many" Connection
+WebSocketServer "1" *-- "many" Session
+WebSocketServer "1" -- "1" MessageHandler
+WebSocketServer "1" -- "1" SyncManager
+WebSocketServer "1" -- "1" PresenceManager
+WebSocketServer "1" -- "1" SnapshotManager
+
+MessageHandler ..> Message
+MessageHandler ..> MessageType
+MessageHandler --> SyncManager
+MessageHandler --> PresenceManager
+
+SyncManager "1" *-- "1" OTEngine
+SyncManager "1" *-- "1" ConflictResolver
+SyncManager ..> EditOperation
+SyncManager ..> Message
+
+ConflictResolver ..> EditOperation
+OTEngine ..> EditOperation
+OTEngine ..> OperationType
+
+PresenceManager ..> PresenceInfo
+PresenceManager ..> PresenceStatus
+
+SnapshotManager ..> IStorageService
+SnapshotManager --> SyncManager
+
+Connection ..> Message
+Session ..> PresenceInfo
+
+EditOperation --> OperationType
+Message --> MessageType
+PresenceInfo --> PresenceStatus
+
+WebSocketServer ..> IAuthService
+WebSocketServer ..> IStorageService
+
+@enduml

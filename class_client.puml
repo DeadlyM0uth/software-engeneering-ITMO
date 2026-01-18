@@ -1,0 +1,348 @@
+@startuml
+
+title Диаграмма классов клиентской части приложения
+
+package "Client Application" {
+    class App {
+        - router: Router
+        - authService: AuthService
+        - wsClient: WebSocketClient
+        + initialize(): void
+        + run(): void
+    }
+
+    class Router {
+        - routes: Map<string, Component>
+        - currentRoute: string
+        + navigate(path: string): void
+        + registerRoute(path: string, component: Component): void
+        - renderComponent(component: Component): void
+    }
+
+    abstract class Component {
+        # state: any
+        # props: any
+        + render(): HTMLElement
+        + mount(container: HTMLElement): void
+        + unmount(): void
+        # setState(newState: any): void
+    }
+}
+
+package "Authentication" {
+    class AuthService {
+        - token: string
+        - currentUser: User
+        + login(email: string, password: string): Promise<User>
+        + logout(): void
+        + register(userData: RegisterData): Promise<User>
+        + getCurrentUser(): User
+        + isAuthenticated(): boolean
+        + getToken(): string
+    }
+
+    class User {
+        + id: string
+        + email: string
+        + name: string
+        + avatar: string
+        + createdAt: DateTime
+    }
+}
+
+package "WebSocket Client" {
+    class WebSocketClient {
+        - socket: WebSocket
+        - url: string
+        - reconnectAttempts: int
+        - messageQueue: Message[]
+        - listeners: Map<MessageType, Function[]>
+        + connect(token: string): Promise<void>
+        + disconnect(): void
+        + send(message: Message): void
+        + on(type: MessageType, callback: Function): void
+        + off(type: MessageType, callback: Function): void
+        - handleMessage(event: MessageEvent): void
+        - handleReconnect(): void
+    }
+
+    class ReconnectionManager {
+        - maxAttempts: int
+        - currentAttempt: int
+        - backoffDelay: int
+        + shouldReconnect(): boolean
+        + getNextDelay(): int
+        + reset(): void
+    }
+}
+
+package "Project Management" {
+    class ProjectService {
+        - apiClient: ApiClient
+        + getProjects(): Promise<Project[]>
+        + getProject(id: string): Promise<Project>
+        + createProject(data: ProjectData): Promise<Project>
+        + updateProject(id: string, data: ProjectData): Promise<Project>
+        + deleteProject(id: string): Promise<void>
+        + inviteUser(projectId: string, email: string): Promise<void>
+    }
+
+    class Project {
+        + id: string
+        + name: string
+        + description: string
+        + ownerId: string
+        + participants: Participant[]
+        + createdAt: DateTime
+        + updatedAt: DateTime
+    }
+
+    class Participant {
+        + userId: string
+        + userName: string
+        + role: ParticipantRole
+        + joinedAt: DateTime
+    }
+
+    enum ParticipantRole {
+        OWNER
+        EDITOR
+        VIEWER
+    }
+}
+
+package "Collaborative Editing" {
+    class EditorController {
+        - canvas: Canvas
+        - selectionManager: SelectionManager
+        - syncService: SyncService
+        - toolManager: ToolManager
+        + initialize(projectId: string): void
+        + handleUserInput(event: InputEvent): void
+        + applyRemoteChange(change: Change): void
+    }
+
+    class Canvas {
+        - objects: Map<string, CanvasObject>
+        - viewport: Viewport
+        - renderer: Renderer
+        + addObject(object: CanvasObject): void
+        + removeObject(id: string): void
+        + updateObject(id: string, properties: any): void
+        + render(): void
+        + clear(): void
+    }
+
+    class CanvasObject {
+        + id: string
+        + type: ObjectType
+        + x: number
+        + y: number
+        + width: number
+        + height: number
+        + properties: Map<string, any>
+        + render(ctx: RenderingContext): void
+        + getBounds(): Rectangle
+    }
+
+    enum ObjectType {
+        RECTANGLE
+        CIRCLE
+        LINE
+        TEXT
+        IMAGE
+        GROUP
+    }
+
+    class SelectionManager {
+        - selectedObjects: Set<string>
+        + select(objectId: string): void
+        + deselect(objectId: string): void
+        + clearSelection(): void
+        + getSelected(): string[]
+        + isSelected(objectId: string): boolean
+    }
+
+    class ToolManager {
+        - activeTool: Tool
+        - tools: Map<string, Tool>
+        + setActiveTool(toolName: string): void
+        + getActiveTool(): Tool
+        + registerTool(name: string, tool: Tool): void
+    }
+
+    abstract class Tool {
+        # name: string
+        + onMouseDown(event: MouseEvent): void
+        + onMouseMove(event: MouseEvent): void
+        + onMouseUp(event: MouseEvent): void
+        + onKeyDown(event: KeyboardEvent): void
+    }
+
+    class SyncService {
+        - wsClient: WebSocketClient
+        - localChanges: EditOperation[]
+        - pendingChanges: EditOperation[]
+        - otClient: OTClient
+        + sendChange(change: EditOperation): void
+        + receiveChange(change: EditOperation): void
+        + synchronize(): void
+        - applyLocalChange(change: EditOperation): void
+        - applyRemoteChange(change: EditOperation): void
+    }
+
+    class OTClient {
+        - state: DocumentState
+        - serverRevision: int
+        - pendingOps: EditOperation[]
+        + applyClient(op: EditOperation): void
+        + applyServer(op: EditOperation): void
+        + transform(op1: EditOperation, op2: EditOperation): EditOperation[]
+    }
+
+    class PresenceService {
+        - wsClient: WebSocketClient
+        - users: Map<string, RemoteUser>
+        + updateCursor(position: CursorPosition): void
+        + updateStatus(status: PresenceStatus): void
+        + getActiveUsers(): RemoteUser[]
+        - handlePresenceUpdate(data: PresenceInfo): void
+    }
+
+    class RemoteUser {
+        + userId: string
+        + userName: string
+        + cursor: CursorPosition
+        + selection: string[]
+        + color: string
+        + status: PresenceStatus
+    }
+
+    class CursorPosition {
+        + x: number
+        + y: number
+        + objectId: string
+    }
+}
+
+package "UI Components" {
+    class LoginComponent extends Component {
+        - authService: AuthService
+        + handleLogin(email: string, password: string): void
+    }
+
+    class ProjectListComponent extends Component {
+        - projectService: ProjectService
+        - projects: Project[]
+        + loadProjects(): void
+        + handleCreateProject(): void
+    }
+
+    class EditorComponent extends Component {
+        - editorController: EditorController
+        - presenceService: PresenceService
+        + initialize(projectId: string): void
+        + handleToolChange(tool: string): void
+    }
+
+    class ToolbarComponent extends Component {
+        - toolManager: ToolManager
+        + handleToolSelect(toolName: string): void
+    }
+
+    class CollaboratorsPanel extends Component {
+        - presenceService: PresenceService
+        - users: RemoteUser[]
+        + updateUsers(users: RemoteUser[]): void
+    }
+}
+
+package "API Client" {
+    class ApiClient {
+        - baseUrl: string
+        - authService: AuthService
+        + get(endpoint: string): Promise<any>
+        + post(endpoint: string, data: any): Promise<any>
+        + put(endpoint: string, data: any): Promise<any>
+        + delete(endpoint: string): Promise<any>
+        - getHeaders(): Headers
+    }
+}
+
+package "State Management" {
+    class Store {
+        - state: AppState
+        - subscribers: Function[]
+        + getState(): AppState
+        + dispatch(action: Action): void
+        + subscribe(callback: Function): void
+        - reduce(state: AppState, action: Action): AppState
+    }
+
+    class AppState {
+        + user: User
+        + currentProject: Project
+        + canvas: CanvasState
+        + presence: PresenceState
+    }
+
+    class Action {
+        + type: string
+        + payload: any
+    }
+}
+
+' Relationships - Main App
+App "1" *-- "1" Router
+App "1" *-- "1" AuthService
+App "1" *-- "1" WebSocketClient
+App "1" *-- "1" Store
+
+Router "1" *-- "many" Component
+
+' Authentication
+AuthService ..> User
+
+' WebSocket
+WebSocketClient "1" *-- "1" ReconnectionManager
+
+' Project Management
+ProjectService ..> ApiClient
+ProjectService ..> Project
+Project "1" *-- "many" Participant
+Participant --> ParticipantRole
+
+' Collaborative Editing
+EditorController "1" *-- "1" Canvas
+EditorController "1" *-- "1" SelectionManager
+EditorController "1" *-- "1" SyncService
+EditorController "1" *-- "1" ToolManager
+
+Canvas "1" *-- "many" CanvasObject
+CanvasObject --> ObjectType
+
+ToolManager "1" *-- "many" Tool
+
+SyncService "1" *-- "1" OTClient
+SyncService --> WebSocketClient
+
+PresenceService --> WebSocketClient
+PresenceService "1" *-- "many" RemoteUser
+RemoteUser "1" *-- "1" CursorPosition
+
+' UI Components
+LoginComponent --> AuthService
+ProjectListComponent --> ProjectService
+EditorComponent "1" *-- "1" EditorController
+EditorComponent --> PresenceService
+ToolbarComponent --> ToolManager
+CollaboratorsPanel --> PresenceService
+
+' API Client
+ApiClient --> AuthService
+
+' State Management
+Store ..> AppState
+Store ..> Action
+
+@enduml
