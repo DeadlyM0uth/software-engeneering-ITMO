@@ -42,11 +42,11 @@ package "Authentication" {
     }
 
     class User {
-        + id: string
-        + email: string
-        + name: string
-        + avatar: string
+        + id: UUID
+        + email: String
+        + name: String
         + createdAt: DateTime
+        + updatedAt: DateTime
     }
 }
 
@@ -80,26 +80,26 @@ package "Project Management" {
     class ProjectService {
         - apiClient: ApiClient
         + getProjects(): Promise<Project[]>
-        + getProject(id: string): Promise<Project>
+        + getProject(id: UUID): Promise<Project>
         + createProject(data: ProjectData): Promise<Project>
-        + updateProject(id: string, data: ProjectData): Promise<Project>
-        + deleteProject(id: string): Promise<void>
-        + inviteUser(projectId: string, email: string): Promise<void>
+        + updateProject(id: UUID, data: ProjectData): Promise<Project>
+        + deleteProject(id: UUID): Promise<void>
+        + inviteUser(projectId: UUID, email: String): Promise<void>
     }
 
     class Project {
-        + id: string
-        + name: string
-        + description: string
-        + ownerId: string
+        + id: UUID
+        + name: String
+        + description: String
+        + ownerId: UUID
         + participants: Participant[]
         + createdAt: DateTime
         + updatedAt: DateTime
     }
 
     class Participant {
-        + userId: string
-        + userName: string
+        + userId: UUID
+        + userName: String
         + role: ParticipantRole
         + joinedAt: DateTime
     }
@@ -117,30 +117,32 @@ package "Collaborative Editing" {
         - selectionManager: SelectionManager
         - syncService: SyncService
         - toolManager: ToolManager
-        + initialize(projectId: string): void
+        + initialize(projectId: UUID): void
         + handleUserInput(event: InputEvent): void
-        + applyRemoteChange(change: Change): void
+        + applyRemoteChange(change: ChangeDelta): void
     }
 
     class Canvas {
-        - objects: Map<string, CanvasObject>
+        - objects: Map<UUID, CanvasObject>
         - viewport: Viewport
         - renderer: Renderer
         + addObject(object: CanvasObject): void
-        + removeObject(id: string): void
-        + updateObject(id: string, properties: any): void
+        + removeObject(id: UUID): void
+        + updateObject(id: UUID, properties: JSON): void
         + render(): void
         + clear(): void
     }
 
     class CanvasObject {
-        + id: string
-        + type: ObjectType
-        + x: number
-        + y: number
-        + width: number
-        + height: number
-        + properties: Map<string, any>
+        + id: UUID
+        + projectId: UUID
+        + type: String
+        + data: JSON
+        + positionX: Float
+        + positionY: Float
+        + createdBy: UUID
+        + createdAt: DateTime
+        + updatedAt: DateTime
         + render(ctx: RenderingContext): void
         + getBounds(): Rectangle
     }
@@ -155,24 +157,24 @@ package "Collaborative Editing" {
     }
 
     class SelectionManager {
-        - selectedObjects: Set<string>
-        + select(objectId: string): void
-        + deselect(objectId: string): void
+        - selectedObjects: Set<UUID>
+        + select(objectId: UUID): void
+        + deselect(objectId: UUID): void
         + clearSelection(): void
-        + getSelected(): string[]
-        + isSelected(objectId: string): boolean
+        + getSelected(): UUID[]
+        + isSelected(objectId: UUID): boolean
     }
 
     class ToolManager {
         - activeTool: Tool
-        - tools: Map<string, Tool>
-        + setActiveTool(toolName: string): void
+        - tools: Map<String, Tool>
+        + setActiveTool(toolName: String): void
         + getActiveTool(): Tool
-        + registerTool(name: string, tool: Tool): void
+        + registerTool(name: String, tool: Tool): void
     }
 
     abstract class Tool {
-        # name: string
+        # name: String
         + onMouseDown(event: MouseEvent): void
         + onMouseMove(event: MouseEvent): void
         + onMouseUp(event: MouseEvent): void
@@ -181,28 +183,36 @@ package "Collaborative Editing" {
 
     class SyncService {
         - wsClient: WebSocketClient
-        - localChanges: EditOperation[]
-        - pendingChanges: EditOperation[]
+        - localChanges: ChangeDelta[]
+        - pendingChanges: ChangeDelta[]
         - otClient: OTClient
-        + sendChange(change: EditOperation): void
-        + receiveChange(change: EditOperation): void
+        + sendChange(change: ChangeDelta): void
+        + receiveChange(change: ChangeDelta): void
         + synchronize(): void
-        - applyLocalChange(change: EditOperation): void
-        - applyRemoteChange(change: EditOperation): void
+        - applyLocalChange(change: ChangeDelta): void
+        - applyRemoteChange(change: ChangeDelta): void
     }
 
     class OTClient {
-        - state: DocumentState
+        - state: JSON
         - serverRevision: int
-        - pendingOps: EditOperation[]
-        + applyClient(op: EditOperation): void
-        + applyServer(op: EditOperation): void
-        + transform(op1: EditOperation, op2: EditOperation): EditOperation[]
+        - pendingOps: ChangeDelta[]
+        + applyClient(op: ChangeDelta): void
+        + applyServer(op: ChangeDelta): void
+        + transform(op1: ChangeDelta, op2: ChangeDelta): ChangeDelta[]
+    }
+
+    class ChangeDelta {
+        + type: String
+        + objectId: UUID
+        + data: JSON
+        + timestamp: DateTime
+        + userId: UUID
     }
 
     class PresenceService {
         - wsClient: WebSocketClient
-        - users: Map<string, RemoteUser>
+        - users: Map<UUID, RemoteUser>
         + updateCursor(position: CursorPosition): void
         + updateStatus(status: PresenceStatus): void
         + getActiveUsers(): RemoteUser[]
@@ -210,18 +220,33 @@ package "Collaborative Editing" {
     }
 
     class RemoteUser {
-        + userId: string
-        + userName: string
+        + userId: UUID
+        + userName: String
         + cursor: CursorPosition
-        + selection: string[]
-        + color: string
+        + selection: UUID[]
+        + color: String
         + status: PresenceStatus
     }
 
     class CursorPosition {
-        + x: number
-        + y: number
-        + objectId: string
+        + x: Float
+        + y: Float
+        + objectId: UUID
+    }
+
+    class PresenceInfo {
+        + userId: UUID
+        + userName: String
+        + status: PresenceStatus
+        + cursor: CursorPosition
+        + lastSeen: DateTime
+    }
+
+    enum PresenceStatus {
+        ONLINE
+        EDITING
+        IDLE
+        OFFLINE
     }
 }
 
@@ -241,13 +266,13 @@ package "UI Components" {
     class EditorComponent extends Component {
         - editorController: EditorController
         - presenceService: PresenceService
-        + initialize(projectId: string): void
-        + handleToolChange(tool: string): void
+        + initialize(projectId: UUID): void
+        + handleToolChange(tool: String): void
     }
 
     class ToolbarComponent extends Component {
         - toolManager: ToolManager
-        + handleToolSelect(toolName: string): void
+        + handleToolSelect(toolName: String): void
     }
 
     class CollaboratorsPanel extends Component {
@@ -259,12 +284,12 @@ package "UI Components" {
 
 package "API Client" {
     class ApiClient {
-        - baseUrl: string
+        - baseUrl: String
         - authService: AuthService
-        + get(endpoint: string): Promise<any>
-        + post(endpoint: string, data: any): Promise<any>
-        + put(endpoint: string, data: any): Promise<any>
-        + delete(endpoint: string): Promise<any>
+        + get(endpoint: String): Promise<any>
+        + post(endpoint: String, data: any): Promise<any>
+        + put(endpoint: String, data: any): Promise<any>
+        + delete(endpoint: String): Promise<any>
         - getHeaders(): Headers
     }
 }
@@ -287,7 +312,7 @@ package "State Management" {
     }
 
     class Action {
-        + type: string
+        + type: String
         + payload: any
     }
 }
@@ -319,16 +344,24 @@ EditorController "1" *-- "1" SyncService
 EditorController "1" *-- "1" ToolManager
 
 Canvas "1" *-- "many" CanvasObject
-CanvasObject --> ObjectType
+CanvasObject ..> ObjectType
 
 ToolManager "1" *-- "many" Tool
 
 SyncService "1" *-- "1" OTClient
 SyncService --> WebSocketClient
+SyncService ..> ChangeDelta
+
+OTClient ..> ChangeDelta
 
 PresenceService --> WebSocketClient
 PresenceService "1" *-- "many" RemoteUser
+PresenceService ..> PresenceInfo
 RemoteUser "1" *-- "1" CursorPosition
+RemoteUser --> PresenceStatus
+
+PresenceInfo "1" *-- "1" CursorPosition
+PresenceInfo --> PresenceStatus
 
 ' UI Components
 LoginComponent --> AuthService
@@ -346,3 +379,4 @@ Store ..> AppState
 Store ..> Action
 
 @enduml
+

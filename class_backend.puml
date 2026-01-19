@@ -1,0 +1,355 @@
+@startuml
+
+title Диаграмма классов REST API бэкенда
+
+class User {
+  - id: UUID
+  - email: String
+  - name: String
+  - passwordHash: String
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  + authenticate(password: String): Boolean
+  + toJSON(): Object
+}
+
+class Project {
+  - id: UUID
+  - name: String
+  - description: Text
+  - ownerId: UUID
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  - participants: ProjectMember[]
+  + addMember(user: User): void
+  + removeMember(userId: UUID): void
+  + canEdit(userId: UUID): Boolean
+  + toJSON(): Object
+}
+
+class CanvasObject {
+  - id: UUID
+  - projectId: UUID
+  - type: String
+  - data: JSON
+  - positionX: Float
+  - positionY: Float
+  - createdBy: UUID
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  + updateData(newData: JSON): void
+  + moveTo(x: Float, y: Float): void
+  + toJSON(): Object
+}
+
+class ProjectMember {
+  - projectId: UUID
+  - userId: UUID
+  - role: String
+  - joinedAt: DateTime
+  + changeRole(newRole: String): void
+}
+
+class CanvasSnapshot {
+  - id: UUID
+  - projectId: UUID
+  - data: JSON
+  - createdAt: DateTime
+  + restore(): CanvasObject[]
+}
+
+class Session {
+  - id: UUID
+  - userId: UUID
+  - token: String
+  - expiresAt: DateTime
+  - createdAt: DateTime
+  + isValid(): Boolean
+  + refresh(): void
+}
+
+' REST API Контроллеры
+class AuthController {
+  + register(request: Request): Response
+  + login(request: Request): Response
+  + logout(request: Request): Response
+  + refreshToken(request: Request): Response
+}
+
+class ProjectController {
+  + createProject(request: Request): Response
+  + getProject(request: Request): Response
+  + updateProject(request: Request): Response
+  + deleteProject(request: Request): Response
+  + listProjects(request: Request): Response
+}
+
+class ProjectMemberController {
+  + inviteMember(request: Request): Response
+  + removeMember(request: Request): Response
+  + listMembers(request: Request): Response
+  + updateMemberRole(request: Request): Response
+}
+
+class CanvasController {
+  + getCanvasState(request: Request): Response
+  + saveCanvasSnapshot(request: Request): Response
+  + getCanvasHistory(request: Request): Response
+  + restoreSnapshot(request: Request): Response
+}
+
+class UserController {
+  + getUserProfile(request: Request): Response
+  + updateUserProfile(request: Request): Response
+  + listUserProjects(request: Request): Response
+}
+
+' DTO классы
+class RegisterRequest {
+  - email: String
+  - name: String
+  - password: String
+}
+
+class LoginRequest {
+  - email: String
+  - password: String
+}
+
+class ProjectCreateRequest {
+  - name: String
+  - description: String
+}
+
+class CanvasUpdateRequest {
+  - projectId: UUID
+  - changes: ChangeDelta[]
+}
+
+class ChangeDelta {
+  - type: String
+  - objectId: UUID
+  - data: JSON
+  - timestamp: DateTime
+  - userId: UUID
+}
+
+' Связи между классами
+User "1" -- "*" Session : имеет >
+User "1" -- "*" ProjectMember : участвует в >
+Project "1" -- "*" ProjectMember : содержит >
+Project "1" -- "*" CanvasObject : содержит >
+Project "1" -- "*" CanvasSnapshot : имеет >
+User "1" -- "*" CanvasObject : создал >
+
+' Ассоциации контроллеров
+AuthController ..> User : использует
+AuthController ..> Session : использует
+ProjectController ..> Project : использует
+ProjectMemberController ..> Project : использует
+ProjectMemberController ..> User : использует
+CanvasController ..> Project : использует
+CanvasController ..> CanvasObject : использует
+CanvasController ..> CanvasSnapshot : использует
+UserController ..> User : использует
+
+' Наследование для базового контроллера
+class BaseController {
+  # validateRequest(request: Request): boolean
+  # handleError(error: Error): Response
+  # sendResponse(data: any): Response
+}
+
+AuthController --|> BaseController
+ProjectController --|> BaseController
+ProjectMemberController --|> BaseController
+CanvasController --|> BaseController
+UserController --|> BaseController
+
+' WebSocket сервис (для справки)
+class WebSocketService {
+  - connections: Map<String, WebSocket>
+  - rooms: Map<String, Set<String>>
+  + connect(userId: String, projectId: String): void
+  + disconnect(userId: String): void
+  + broadcast(projectId: String, message: Object): void
+  + sendToUser(userId: String, message: Object): void
+}
+
+WebSocketService ..> CanvasController : получает обновления
+WebSocketService ..> Project : использует
+
+' Сервисный слой
+class CanvasSyncService {
+  + applyChange(projectId: UUID, delta: ChangeDelta): CanvasObject
+  + resolveConflict(changes: ChangeDelta[]): ChangeDelta
+  + createSnapshot(projectId: UUID): CanvasSnapshot
+}
+
+CanvasController ..> CanvasSyncService : использует
+WebSocketService ..> CanvasSyncService : использует
+
+' ===== ORM слой =====
+
+class Database {
+  - connection: Connection
+  - config: DatabaseConfig
+  + getConnection(): Connection
+  + execute(query: String): Result
+  + beginTransaction(): Transaction
+  + endTransaction(): void
+}
+
+class DatabaseConfig {
+  - host: String
+  - port: Integer
+  - username: String
+  - password: String
+  - database: String
+  - dialect: String
+}
+
+interface Entity {
+  + getId(): UUID
+  + save(): void
+  + delete(): void
+  + toDatabase(): Object
+}
+
+abstract class BaseEntity {
+  - id: UUID
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  + save(): void
+  + delete(): void
+}
+
+Entity <|.. BaseEntity
+
+' Entity классы
+class UserEntity {
+}
+
+class ProjectEntity {
+}
+
+class CanvasObjectEntity {
+}
+
+class ProjectMemberEntity {
+}
+
+class CanvasSnapshotEntity {
+}
+
+class SessionEntity {
+}
+
+UserEntity --|> BaseEntity
+ProjectEntity --|> BaseEntity
+CanvasObjectEntity --|> BaseEntity
+ProjectMemberEntity --|> BaseEntity
+CanvasSnapshotEntity --|> BaseEntity
+SessionEntity --|> BaseEntity
+
+' Repository pattern
+interface Repository {
+  + find(id: UUID): Entity
+  + findAll(filter: Object): Entity[]
+  + create(entity: Entity): Entity
+  + update(entity: Entity): Entity
+  + delete(id: UUID): void
+}
+
+class UserRepository {
+  - database: Database
+  + findByEmail(email: String): UserEntity
+  + findActive(): UserEntity[]
+}
+
+class ProjectRepository {
+  - database: Database
+  + findByOwner(ownerId: UUID): ProjectEntity[]
+  + findCollaborative(userId: UUID): ProjectEntity[]
+}
+
+class CanvasObjectRepository {
+  - database: Database
+  + findByProject(projectId: UUID): CanvasObjectEntity[]
+  + bulkUpdate(objects: CanvasObjectEntity[]): void
+}
+
+class CanvasSnapshotRepository {
+  - database: Database
+  + findLatest(projectId: UUID): CanvasSnapshotEntity
+  + findHistory(projectId: UUID, limit: Integer): CanvasSnapshotEntity[]
+}
+
+class ProjectMemberRepository {
+  - database: Database
+  + findByProject(projectId: UUID): ProjectMemberEntity[]
+  + findByUser(userId: UUID): ProjectMemberEntity[]
+}
+
+class SessionRepository {
+  - database: Database
+  + findValid(token: String): SessionEntity
+  + deleteExpired(): void
+}
+
+Repository <|.. UserRepository
+Repository <|.. ProjectRepository
+Repository <|.. CanvasObjectRepository
+Repository <|.. CanvasSnapshotRepository
+Repository <|.. ProjectMemberRepository
+Repository <|.. SessionRepository
+
+UserRepository ..> UserEntity : использует
+ProjectRepository ..> ProjectEntity : использует
+CanvasObjectRepository ..> CanvasObjectEntity : использует
+CanvasSnapshotRepository ..> CanvasSnapshotEntity : использует
+ProjectMemberRepository ..> ProjectMemberEntity : использует
+SessionRepository ..> SessionEntity : использует
+
+' Database Connection
+UserRepository ..> Database : использует
+ProjectRepository ..> Database : использует
+CanvasObjectRepository ..> Database : использует
+CanvasSnapshotRepository ..> Database : использует
+ProjectMemberRepository ..> Database : использует
+SessionRepository ..> Database : использует
+
+' Миграции и схемы
+class Migration {
+  - version: String
+  - description: String
+  + up(): void
+  + down(): void
+}
+
+class MigrationRunner {
+  - database: Database
+  - migrations: Migration[]
+  + run(): void
+  + rollback(): void
+}
+
+class TableSchema {
+  - tableName: String
+  - columns: Column[]
+  + create(): void
+  + drop(): void
+}
+
+class Column {
+  - name: String
+  - type: String
+  - nullable: Boolean
+  - default: String
+}
+
+TableSchema --> Column : содержит
+MigrationRunner ..> Migration : использует
+MigrationRunner ..> Database : использует
+
+@enduml

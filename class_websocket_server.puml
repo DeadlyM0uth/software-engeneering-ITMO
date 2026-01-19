@@ -5,20 +5,20 @@ title Диаграмма классов WebSocket-сервера
 package "WebSocket Server" {
     class WebSocketServer {
         - port: int
-        - connections: Map<string, Connection>
-        - sessions: Map<string, Session>
+        - connections: Map<UUID, Connection>
+        - editingSessions: Map<UUID, EditingSession>
         + start(): void
         + stop(): void
         + handleConnection(socket: Socket): void
-        + broadcast(message: Message, excludeId?: string): void
-        + sendToUser(userId: string, message: Message): void
+        + broadcast(projectId: UUID, message: Message, excludeId?: UUID): void
+        + sendToUser(userId: UUID, message: Message): void
     }
 
     class Connection {
-        - id: string
+        - id: UUID
         - socket: Socket
-        - userId: string
-        - projectId: string
+        - userId: UUID
+        - projectId: UUID
         - isAlive: boolean
         - lastActivity: DateTime
         + send(message: Message): void
@@ -27,15 +27,15 @@ package "WebSocket Server" {
         + isActive(): boolean
     }
 
-    class Session {
-        - id: string
-        - projectId: string
-        - participants: Set<string>
+    class EditingSession {
+        - id: UUID
+        - projectId: UUID
+        - participants: Set<UUID>
         - createdAt: DateTime
         - lastActivity: DateTime
-        + addParticipant(userId: string): void
-        + removeParticipant(userId: string): void
-        + getActiveUsers(): string[]
+        + addParticipant(userId: UUID): void
+        + removeParticipant(userId: UUID): void
+        + getActiveUsers(): UUID[]
         + isActive(): boolean
     }
 
@@ -47,37 +47,37 @@ package "WebSocket Server" {
     class SyncManager {
         - operationalTransform: OTEngine
         - conflictResolver: ConflictResolver
-        + processEdit(edit: EditOperation): void
-        + synchronizeChanges(projectId: string, changes: Change[]): void
-        + broadcastChanges(projectId: string, changes: Change[]): void
-        + resolveConflicts(operations: EditOperation[]): EditOperation[]
+        + processEdit(edit: ChangeDelta): void
+        + synchronizeChanges(projectId: UUID, changes: ChangeDelta[]): void
+        + broadcastChanges(projectId: UUID, changes: ChangeDelta[]): void
+        + resolveConflicts(operations: ChangeDelta[]): ChangeDelta[]
     }
 
     class PresenceManager {
-        - userPresence: Map<string, PresenceInfo>
-        + updatePresence(userId: string, status: PresenceStatus): void
-        + getUsersInProject(projectId: string): PresenceInfo[]
-        + notifyPresenceChange(projectId: string, userId: string): void
+        - userPresence: Map<UUID, PresenceInfo>
+        + updatePresence(userId: UUID, status: PresenceStatus): void
+        + getUsersInProject(projectId: UUID): PresenceInfo[]
+        + notifyPresenceChange(projectId: UUID, userId: UUID): void
     }
 
     class SnapshotManager {
         - snapshotInterval: int
-        - lastSnapshot: Map<string, DateTime>
-        + shouldCreateSnapshot(projectId: string): boolean
-        + createSnapshot(projectId: string, state: ProjectState): void
-        + scheduleSnapshot(projectId: string): void
+        - lastSnapshot: Map<UUID, DateTime>
+        + shouldCreateSnapshot(projectId: UUID): boolean
+        + createSnapshot(projectId: UUID, state: JSON): void
+        + scheduleSnapshot(projectId: UUID): void
     }
 
     class ConflictResolver {
-        + detectConflict(op1: EditOperation, op2: EditOperation): boolean
-        + resolve(operations: EditOperation[]): EditOperation[]
-        - applyTransformation(op: EditOperation, against: EditOperation): EditOperation
+        + detectConflict(op1: ChangeDelta, op2: ChangeDelta): boolean
+        + resolve(operations: ChangeDelta[]): ChangeDelta[]
+        - applyTransformation(op: ChangeDelta, against: ChangeDelta): ChangeDelta
     }
 
     class OTEngine {
-        - history: EditOperation[]
-        + transform(clientOp: EditOperation, serverOps: EditOperation[]): EditOperation
-        + apply(op: EditOperation, state: DocumentState): DocumentState
+        - history: ChangeDelta[]
+        + transform(clientOp: ChangeDelta, serverOps: ChangeDelta[]): ChangeDelta
+        + apply(op: ChangeDelta, state: JSON): JSON
     }
 
     enum MessageType {
@@ -94,34 +94,30 @@ package "WebSocket Server" {
         + type: MessageType
         + payload: any
         + timestamp: DateTime
-        + userId: string
-        + projectId: string
+        + userId: UUID
+        + projectId: UUID
     }
 
-    class EditOperation {
-        + id: string
-        + type: OperationType
-        + objectId: string
-        + property: string
-        + oldValue: any
-        + newValue: any
+    class ChangeDelta {
+        + type: String
+        + objectId: UUID
+        + data: JSON
         + timestamp: DateTime
-        + userId: string
-    }
-
-    enum OperationType {
-        INSERT
-        DELETE
-        UPDATE
-        MOVE
+        + userId: UUID
     }
 
     class PresenceInfo {
-        + userId: string
-        + userName: string
+        + userId: UUID
+        + userName: String
         + status: PresenceStatus
         + cursor: CursorPosition
         + lastSeen: DateTime
+    }
+
+    class CursorPosition {
+        + x: Float
+        + y: Float
+        + objectId: UUID
     }
 
     enum PresenceStatus {
@@ -134,19 +130,37 @@ package "WebSocket Server" {
 
 package "Integration" {
     interface IStorageService {
-        + saveSnapshot(projectId: string, data: any): Promise<void>
-        + loadSnapshot(projectId: string): Promise<any>
+        + saveSnapshot(projectId: UUID, data: JSON): Promise<void>
+        + loadSnapshot(projectId: UUID): Promise<JSON>
     }
 
     interface IAuthService {
-        + validateToken(token: string): Promise<User>
-        + getUserPermissions(userId: string, projectId: string): Promise<Permissions>
+        + validateToken(token: String): Promise<User>
+        + getUserPermissions(userId: UUID, projectId: UUID): Promise<Permissions>
+    }
+
+    interface ICanvasSyncService {
+        + applyChange(projectId: UUID, delta: ChangeDelta): CanvasObject
+        + resolveConflict(changes: ChangeDelta[]): ChangeDelta
+        + createSnapshot(projectId: UUID): CanvasSnapshot
+    }
+
+    class User {
+        + id: UUID
+        + email: String
+        + name: String
+    }
+
+    class Permissions {
+        + canEdit: Boolean
+        + canView: Boolean
+        + canInvite: Boolean
     }
 }
 
 ' Relationships
 WebSocketServer "1" *-- "many" Connection
-WebSocketServer "1" *-- "many" Session
+WebSocketServer "1" *-- "many" EditingSession
 WebSocketServer "1" -- "1" MessageHandler
 WebSocketServer "1" -- "1" SyncManager
 WebSocketServer "1" -- "1" PresenceManager
@@ -159,27 +173,32 @@ MessageHandler --> PresenceManager
 
 SyncManager "1" *-- "1" OTEngine
 SyncManager "1" *-- "1" ConflictResolver
-SyncManager ..> EditOperation
+SyncManager ..> ChangeDelta
 SyncManager ..> Message
+SyncManager ..> ICanvasSyncService
 
-ConflictResolver ..> EditOperation
-OTEngine ..> EditOperation
-OTEngine ..> OperationType
+ConflictResolver ..> ChangeDelta
+OTEngine ..> ChangeDelta
 
 PresenceManager ..> PresenceInfo
 PresenceManager ..> PresenceStatus
 
 SnapshotManager ..> IStorageService
+SnapshotManager ..> ICanvasSyncService
 SnapshotManager --> SyncManager
 
 Connection ..> Message
-Session ..> PresenceInfo
+EditingSession ..> PresenceInfo
 
-EditOperation --> OperationType
 Message --> MessageType
 PresenceInfo --> PresenceStatus
+PresenceInfo "1" *-- "1" CursorPosition
 
 WebSocketServer ..> IAuthService
 WebSocketServer ..> IStorageService
 
+IAuthService ..> User
+IAuthService ..> Permissions
+
 @enduml
+
